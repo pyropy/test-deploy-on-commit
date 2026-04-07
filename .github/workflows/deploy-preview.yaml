@@ -10,9 +10,6 @@ jobs:
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '/deploy')
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-      issues: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
       base-ref: ${{ steps.pr.outputs.base-ref }}
