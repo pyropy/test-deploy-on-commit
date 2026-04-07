@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      pull-requests: read
+      pull-requests: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
       base-ref: ${{ steps.pr.outputs.base-ref }}
