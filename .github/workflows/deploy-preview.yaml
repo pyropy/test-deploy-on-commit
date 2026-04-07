@@ -84,13 +84,6 @@ jobs:
           ref: ${{ needs.pre-deploy.outputs.head-sha }}
           submodules: recursive
 
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-
       - name: Deploy SST stage
         run: echo "$STAGE"
 
