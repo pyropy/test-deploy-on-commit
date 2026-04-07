@@ -5,29 +5,18 @@ on:
     types: [created]
 
 jobs:
-  guard:
+  pre-deploy:
     if: >-
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/deploy')
+      contains(github.event.comment.body, '/deploy') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
-      issues: write
       pull-requests: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
-      base-ref: ${{ steps.pr.outputs.base-ref }}
-      head-repo: ${{ steps.pr.outputs.head-repo }}
+      comment-id: ${{ steps.comment.outputs.comment-id }}
     steps:
-      - name: Check permissions
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/${{ github.actor }}/permission" --jq '.permission')
-          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "write" && "$PERMISSION" != "maintain" ]]; then
-            echo "::error::User ${{ github.actor }} does not have write permission"
-            exit 1
-          fi
-
       - name: Add reaction
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -46,22 +35,18 @@ jobs:
             echo "::error::PR is not open (state: $STATE)"
             exit 1
           fi
-          echo "head-sha=$(echo "$PR_JSON" | jq -r '.headRefOid')" >> "$GITHUB_OUTPUT"
-          echo "base-ref=$(echo "$PR_JSON" | jq -r '.baseRefName')" >> "$GITHUB_OUTPUT"
           HEAD_REPO=$(echo "$PR_JSON" | jq -r '.headRepositoryOwner.login + "/" + .headRepository.name')
-          echo "head-repo=$HEAD_REPO" >> "$GITHUB_OUTPUT"
+          if [ "$HEAD_REPO" != "${{ github.repository }}" ]; then
+            echo "::error::Cannot deploy from fork ($HEAD_REPO)"
+            exit 1
+          fi
+          BASE_REF=$(echo "$PR_JSON" | jq -r '.baseRefName')
+          if [ "$BASE_REF" = "production" ]; then
+            echo "::error::Cannot deploy preview for PRs targeting production"
+            exit 1
+          fi
+          echo "head-sha=$(echo "$PR_JSON" | jq -r '.headRefOid')" >> "$GITHUB_OUTPUT"
 
-  pre-deploy:
-    needs: [guard]
-    if: >-
-      needs.guard.outputs.base-ref != 'production' &&
-      needs.guard.outputs.head-repo == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    outputs:
-      comment-id: ${{ steps.comment.outputs.comment-id }}
-    steps:
       - name: Post deployment started comment
         id: comment
         uses: peter-evans/create-or-update-comment@v4
@@ -72,12 +57,12 @@ jobs:
 
             | | |
             |---|---|
-            | **Latest commit** | `${{ needs.guard.outputs.head-sha }}` |
+            | **Latest commit** | `${{ steps.pr.outputs.head-sha }}` |
             | **Status** | ⏳ Deployment in progress... |
             | **Logs** | [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
   deploy-preview:
-    needs: [guard, pre-deploy]
+    needs: [pre-deploy]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -91,12 +76,12 @@ jobs:
     outputs:
       url: ${{ steps.deploy.outputs.url }}
       pr-number: ${{ github.event.issue.number }}
-      head-sha: ${{ needs.guard.outputs.head-sha }}
+      head-sha: ${{ needs.pre-deploy.outputs.head-sha }}
 
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.guard.outputs.head-sha }}
+          ref: ${{ needs.pre-deploy.outputs.head-sha }}
           submodules: recursive
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
